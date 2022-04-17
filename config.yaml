@@ -1,0 +1,7 @@
+eth-url: wss://eth-mainnet.alchemyapi.io/v2/y9pUreBDoofUiAPuAd2qm6PxN0OMFmNG
+addresses:
+  - 0xC730155a5F702B6bF3CaeCD25ebff9fB1b2a2B85
+tokens:
+  - 0x514910771AF9Ca656af840dff83E8264EcF986CA
+  - 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+  - 0xdAC17F958D2ee523a2206206994597C13D831ec7
