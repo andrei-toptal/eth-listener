@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math/big"
 	"strings"
@@ -13,18 +12,22 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/pinebit/eth-listener/config"
 	"github.com/pinebit/eth-listener/erc20"
-	"github.com/pinebit/eth-listener/telegram"
 )
 
 func main() {
-	cfg, err := config.LoadConfig("config.yaml")
+	cfg, err := LoadConfig("config.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	tg := telegram.NewTelegram(cfg.Telegram)
+	aliases := NewAliases(cfg.Aliases)
+
+	log.Println("Connecting Telegram bot...")
+
+	tg := NewTelegram(cfg.Telegram)
+
+	log.Println("Connecting ETH node...")
 
 	client, err := ethclient.Dial(cfg.EthUrl)
 	if err != nil {
@@ -39,8 +42,7 @@ func main() {
 
 	log.Println("Fetching tokens...")
 
-	var tokens []*erc20.ERC20Token
-	tokensMap := make(map[common.Address]*erc20.ERC20Token)
+	tokensMap := make(map[common.Address]*erc20.Token)
 	filterQuery := ethereum.FilterQuery{}
 
 	for _, ta := range cfg.Tokens {
@@ -50,25 +52,13 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		tokens = append(tokens, token)
 		tokensMap[contractAddr] = token
 	}
-
-	log.Println("Fetching balances...")
 
 	addresses := make(map[common.Address]interface{})
 	for _, hexAddr := range cfg.Addresses {
 		ethAddr := common.HexToAddress(hexAddr)
 		addresses[ethAddr] = struct{}{}
-		balances := NewBalances(ethAddr, tokens)
-		balances.Update(context.Background(), client)
-
-		log.Printf("ADDRESS: %s", ethAddr.String())
-		log.Printf("- ETH balance: %s", balances.GetBalance(ethAddr).String())
-
-		for _, token := range tokens {
-			log.Printf("- %s balance: %s", token.Symbol, balances.GetBalance(token.ContractAddress).String())
-		}
 	}
 
 	log.Println("Watching for transactions...")
@@ -85,6 +75,9 @@ func main() {
 	}
 	defer sub.Unsubscribe()
 
+	transfersCh := make(chan *Transfer, 32)
+	go HandleTransfersLoop(transfersCh, client, tg, aliases)
+
 	for header := range headsCh {
 		block, err := client.BlockByNumber(context.Background(), header.Number)
 		if err != nil {
@@ -92,19 +85,28 @@ func main() {
 		}
 
 		for _, tx := range block.Transactions() {
+			msg, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), big.NewInt(1))
+			if err != nil {
+				continue
+			}
 			if tx.To() != nil {
 				if _, has := addresses[*tx.To()]; has && tx.Value() != nil {
-					msg := fmt.Sprintf("You received: %s ETH", WeiToEther(tx.Value()).String())
-					log.Println(msg)
-					tg.Notify(msg)
+					transfersCh <- &Transfer{
+						Direction: Received,
+						From:      msg.From(),
+						To:        *tx.To(),
+						Value:     *tx.Value(),
+						Token:     erc20.ETHToken,
+					}
 				}
 			}
-			msg, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), big.NewInt(1))
-			if err == nil {
-				if _, has := addresses[msg.From()]; has && msg.Value() != nil && msg.To() != nil {
-					msg := fmt.Sprintf("You sent %s ETH to %s", WeiToEther(msg.Value()).String(), msg.To().String())
-					log.Println(msg)
-					tg.Notify(msg)
+			if _, has := addresses[msg.From()]; has && msg.Value() != nil && msg.To() != nil {
+				transfersCh <- &Transfer{
+					Direction: Sent,
+					From:      msg.From(),
+					To:        *tx.To(),
+					Value:     *tx.Value(),
+					Token:     erc20.ETHToken,
 				}
 			}
 		}
@@ -139,11 +141,25 @@ func main() {
 			from := common.HexToAddress(logItem.Topics[1].Hex())
 			to := common.HexToAddress(logItem.Topics[2].Hex())
 			if _, has := addresses[from]; has {
-				log.Printf("You sent %s %s to %s", token.ConvertValue(transfer.Value).String(), token.Symbol, to)
+				transfersCh <- &Transfer{
+					Direction: Sent,
+					From:      from,
+					To:        to,
+					Value:     *transfer.Value,
+					Token:     token,
+				}
 			}
 			if _, has := addresses[to]; has {
-				log.Printf("You received %s %s from %s", token.ConvertValue(transfer.Value).String(), token.Symbol, from)
+				transfersCh <- &Transfer{
+					Direction: Received,
+					From:      from,
+					To:        to,
+					Value:     *transfer.Value,
+					Token:     token,
+				}
 			}
 		}
 	}
+
+	log.Fatalln("Application stopped receiving heads.")
 }
