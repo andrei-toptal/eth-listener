@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/big"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/pinebit/eth-listener/config"
 	"github.com/pinebit/eth-listener/erc20"
+	"github.com/pinebit/eth-listener/telegram"
 )
 
 func main() {
@@ -21,6 +23,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	tg := telegram.NewTelegram(cfg.Telegram)
 
 	client, err := ethclient.Dial(cfg.EthUrl)
 	if err != nil {
@@ -90,13 +94,17 @@ func main() {
 		for _, tx := range block.Transactions() {
 			if tx.To() != nil {
 				if _, has := addresses[*tx.To()]; has && tx.Value() != nil {
-					log.Printf("You received: %s ETH", WeiToEther(tx.Value()).String())
+					msg := fmt.Sprintf("You received: %s ETH", WeiToEther(tx.Value()).String())
+					log.Println(msg)
+					tg.Notify(msg)
 				}
 			}
 			msg, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), big.NewInt(1))
 			if err == nil {
 				if _, has := addresses[msg.From()]; has && msg.Value() != nil && msg.To() != nil {
-					log.Printf("You sent %s ETH to %s", WeiToEther(msg.Value()).String(), msg.To().String())
+					msg := fmt.Sprintf("You sent %s ETH to %s", WeiToEther(msg.Value()).String(), msg.To().String())
+					log.Println(msg)
+					tg.Notify(msg)
 				}
 			}
 		}

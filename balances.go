@@ -81,7 +81,7 @@ func WeiToEther(wei *big.Int) *big.Float {
 }
 
 func fetchEthBalance(ctx context.Context, addr common.Address, client *ethclient.Client) (*big.Float, error) {
-	wei, err := client.BalanceAt(ctx, addr, big.NewInt(-1))
+	wei, err := client.PendingBalanceAt(ctx, addr)
 	if err != nil {
 		return nil, err
 	}

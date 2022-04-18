@@ -4,6 +4,8 @@ go 1.18
 
 require (
 	github.com/ethereum/go-ethereum v1.10.17
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	go.uber.org/atomic v1.9.0
 	go.uber.org/multierr v1.8.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
@@ -30,7 +32,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
 	github.com/tklauser/numcpus v0.4.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
-	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4 // indirect
 	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
