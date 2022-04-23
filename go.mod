@@ -6,7 +6,6 @@ require (
 	github.com/ethereum/go-ethereum v1.10.17
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	go.uber.org/atomic v1.9.0
-	go.uber.org/multierr v1.8.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )
 

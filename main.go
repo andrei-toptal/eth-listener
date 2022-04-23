@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/pinebit/eth-listener/erc20"
@@ -21,11 +22,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	aliases := NewAliases(cfg.Aliases)
+	accounts := make(map[common.Address]string)
+	for _, acc := range cfg.Accounts {
+		accounts[common.HexToAddress(acc.Address)] = acc.Alias
+	}
 
-	log.Println("Connecting Telegram bot...")
-
-	tg := NewTelegram(cfg.Telegram)
+	var tg Telegram
+	if cfg.Telegram == nil {
+		tg = NewNoopTelegram()
+	} else {
+		log.Println("Connecting Telegram bot...")
+		tg = NewTelegram(cfg.Telegram)
+	}
 
 	log.Println("Connecting ETH node...")
 
@@ -34,32 +42,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	chainID, err := client.ChainID(context.Background())
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Working chain ID: %s", chainID.String())
-
-	log.Println("Fetching tokens...")
-
-	tokensMap := make(map[common.Address]*erc20.Token)
-	filterQuery := ethereum.FilterQuery{}
-
-	for _, ta := range cfg.Tokens {
-		contractAddr := common.HexToAddress(ta)
-		filterQuery.Addresses = append(filterQuery.Addresses, contractAddr)
-		token, err := erc20.FetchERC20Token(contractAddr, client)
-		if err != nil {
-			log.Fatal(err)
-		}
-		tokensMap[contractAddr] = token
-	}
-
-	addresses := make(map[common.Address]interface{})
-	for _, hexAddr := range cfg.Addresses {
-		ethAddr := common.HexToAddress(hexAddr)
-		addresses[ethAddr] = struct{}{}
-	}
+	tm := NewTokensManager(client)
 
 	log.Println("Watching for transactions...")
 
@@ -76,7 +59,9 @@ func main() {
 	defer sub.Unsubscribe()
 
 	transfersCh := make(chan *Transfer, 32)
-	go HandleTransfersLoop(transfersCh, client, tg, aliases)
+	go HandleTransfersLoop(transfersCh, tm, tg, accounts)
+
+	logTransferSigHash := crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
 
 	for header := range headsCh {
 		block, err := client.BlockByNumber(context.Background(), header.Number)
@@ -90,27 +75,28 @@ func main() {
 				continue
 			}
 			if tx.To() != nil {
-				if _, has := addresses[*tx.To()]; has && tx.Value() != nil {
+				if _, has := accounts[*tx.To()]; has && tx.Value() != nil {
 					transfersCh <- &Transfer{
 						Direction: Received,
 						From:      msg.From(),
 						To:        *tx.To(),
 						Value:     *tx.Value(),
-						Token:     erc20.ETHToken,
+						Token:     ETHToken,
 					}
 				}
 			}
-			if _, has := addresses[msg.From()]; has && msg.Value() != nil && msg.To() != nil {
+			if _, has := accounts[msg.From()]; has && msg.Value() != nil && msg.To() != nil {
 				transfersCh <- &Transfer{
 					Direction: Sent,
 					From:      msg.From(),
 					To:        *tx.To(),
 					Value:     *tx.Value(),
-					Token:     erc20.ETHToken,
+					Token:     ETHToken,
 				}
 			}
 		}
 
+		filterQuery := ethereum.FilterQuery{}
 		filterQuery.FromBlock = block.Number()
 		filterQuery.ToBlock = block.Number()
 		logs, err := client.FilterLogs(context.Background(), filterQuery)
@@ -119,13 +105,12 @@ func main() {
 		}
 
 		for _, logItem := range logs {
-			if logItem.Topics[0] != erc20.LogTransferSigHash || len(logItem.Topics) != 3 {
+			if logItem.Topics[0] != logTransferSigHash || len(logItem.Topics) != 3 {
 				continue
 			}
 
-			token, has := tokensMap[logItem.Address]
-			if !has {
-				log.Printf("ERROR: missing token for %s", logItem.Address)
+			token, err := tm.GetToken(context.Background(), logItem.Address)
+			if err != nil {
 				continue
 			}
 
@@ -135,12 +120,11 @@ func main() {
 
 			var transfer logTransfer
 			if err := abi.UnpackIntoInterface(&transfer, "Transfer", logItem.Data); err != nil || transfer.Value == nil {
-				log.Printf("ERROR: failed to interpret Transfer event: %v", err)
 				continue
 			}
 			from := common.HexToAddress(logItem.Topics[1].Hex())
 			to := common.HexToAddress(logItem.Topics[2].Hex())
-			if _, has := addresses[from]; has {
+			if _, has := accounts[from]; has {
 				transfersCh <- &Transfer{
 					Direction: Sent,
 					From:      from,
@@ -149,7 +133,7 @@ func main() {
 					Token:     token,
 				}
 			}
-			if _, has := addresses[to]; has {
+			if _, has := accounts[to]; has {
 				transfersCh <- &Transfer{
 					Direction: Received,
 					From:      from,
@@ -161,5 +145,6 @@ func main() {
 		}
 	}
 
+	tg.Notify("Bot is shutting down...")
 	log.Fatalln("Application stopped receiving heads.")
 }

@@ -12,6 +12,14 @@ type Telegram interface {
 	Notify(message string)
 }
 
+type noopTelegram struct{}
+
+func NewNoopTelegram() Telegram {
+	return noopTelegram{}
+}
+
+func (noopTelegram) Notify(string) {}
+
 type telegram struct {
 	bot        *tgbotapi.BotAPI
 	username   string
@@ -50,6 +58,7 @@ func (t *telegram) updatesLoop() {
 		if update.Message == nil {
 			continue
 		}
+		log.Printf("Received message from %s: `%s`", update.Message.From.UserName, update.Message.Text)
 		if t.username != "" && update.Message.From.UserName != t.username {
 			continue
 		}

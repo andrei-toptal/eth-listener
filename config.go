@@ -12,17 +12,15 @@ type TelegramConfig struct {
 	Username string `yaml:"username"`
 }
 
-type AliasConfig struct {
+type AccountConfig struct {
 	Address string `yaml:"address"`
 	Alias   string `yaml:"alias"`
 }
 
 type Config struct {
-	EthUrl    string          `yaml:"eth-url"`
-	Addresses []string        `yaml:"addresses"`
-	Tokens    []string        `yaml:"tokens"`
-	Telegram  *TelegramConfig `yaml:"telegram"`
-	Aliases   []AliasConfig   `yaml:"aliases"`
+	EthUrl   string          `yaml:"eth-url"`
+	Accounts []AccountConfig `yaml:"accounts"`
+	Telegram *TelegramConfig `yaml:"telegram"`
 }
 
 func LoadConfig(filepath string) (config *Config, err error) {
@@ -36,14 +34,11 @@ func LoadConfig(filepath string) (config *Config, err error) {
 		return
 	}
 
+	if len(config.Accounts) == 0 {
+		log.Fatalf("Config is missing accounts")
+	}
 	if config.EthUrl == "" {
 		log.Fatalf("Config is missing eth-url")
-	}
-	if config.Telegram == nil {
-		log.Fatalf("Config is missing telegram settings")
-	}
-	if config.Telegram.Token == "" {
-		log.Fatalf("Config is missing telegram token")
 	}
 
 	return
