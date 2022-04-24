@@ -24,46 +24,44 @@ type Transfer struct {
 	Token     *Token
 }
 
-func HandleTransfersLoop(transfersCh <-chan *Transfer, tm TokensManager, tg Telegram, accounts map[common.Address]string) {
-	for transfer := range transfersCh {
-		value := transfer.Token.RenderValue(&transfer.Value)
+func HandleTransfersLoop(ctx context.Context, transfersCh <-chan *Transfer, app *App) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case transfer := <-transfersCh:
+			value := transfer.Token.RenderValue(&transfer.Value)
 
-		var msg string
-		switch transfer.Direction {
-		case Sent:
-			balanceStr := "N/A"
-			balance, err := tm.FetchBalance(context.Background(), transfer.Token, transfer.From)
-			if err == nil {
-				balanceStr = transfer.Token.RenderValue(balance)
+			getBalanceStr := func(addr common.Address) string {
+				balanceStr := "N/A"
+				balance, err := app.tokensManager.FetchBalance(ctx, transfer.Token, addr)
+				if err == nil {
+					balanceStr = transfer.Token.RenderValue(balance)
+				} else {
+					log.Printf("Failed to fetch balance for %s: %v", transfer.Token.Symbol, err)
+				}
+				return balanceStr
 			}
-			msg = fmt.Sprintf("%s sent %s to %s, new balance: %s",
-				lookup(accounts, transfer.From),
-				value,
-				lookup(accounts, transfer.To),
-				balanceStr)
 
-		case Received:
-			balanceStr := "N/A"
-			balance, err := tm.FetchBalance(context.Background(), transfer.Token, transfer.To)
-			if err == nil {
-				balanceStr = transfer.Token.RenderValue(balance)
+			var msg string
+			switch transfer.Direction {
+			case Sent:
+				msg = fmt.Sprintf("%s sent %s to %s, new balance: %s",
+					app.accounts.Lookup(transfer.From),
+					value,
+					app.accounts.Lookup(transfer.To),
+					getBalanceStr(transfer.From))
+
+			case Received:
+				msg = fmt.Sprintf("%s received %s from %s, new balance: %s",
+					app.accounts.Lookup(transfer.To),
+					value,
+					app.accounts.Lookup(transfer.From),
+					getBalanceStr(transfer.To))
 			}
-			msg = fmt.Sprintf("%s received %s from %s, new balance: %s",
-				lookup(accounts, transfer.To),
-				value,
-				lookup(accounts, transfer.From),
-				balanceStr)
+
+			log.Println(msg)
+			app.telegram.Notify(msg)
 		}
-
-		log.Println(msg)
-		tg.Notify(msg)
 	}
-}
-
-func lookup(accounts map[common.Address]string, addr common.Address) string {
-	alias, ok := accounts[addr]
-	if !ok {
-		return addr.String()
-	}
-	return alias
 }

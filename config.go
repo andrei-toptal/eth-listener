@@ -23,8 +23,8 @@ type Config struct {
 	Telegram *TelegramConfig `yaml:"telegram"`
 }
 
-func LoadConfig(filepath string) (config *Config, err error) {
-	configData, err := ioutil.ReadFile(filepath)
+func LoadConfig(configPath string) (config *Config, err error) {
+	configData, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}

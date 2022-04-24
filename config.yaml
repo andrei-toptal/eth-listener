@@ -1,8 +1,9 @@
-eth-url: <enter-your-eth-url-here>
-addresses:
-  - <enter-your-eth-addresses-to-watch-here>
-tokens:
-  - <enter-your-erc20-tokens-here>
+eth-url: <enter-your-eth-url>
+accounts:
+  - address: <enter-your-eth-address1-to-watch>
+    alias: <enter-your-eth-address1-alias>
+  - address: <enter-your-eth-address2-to-watch>
+    alias: <enter-your-eth-address2-alias>
 telegram:
   token: <enter-your-tg-token-here>
   username: <enter-your-tg-username-here>

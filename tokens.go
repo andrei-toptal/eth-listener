@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/big"
 
@@ -39,15 +41,17 @@ type TokensManager interface {
 
 type tokensManager struct {
 	client *ethclient.Client
+	tdb    TokensDB
 	tokens map[common.Address]*Token
 }
 
-func NewTokensManager(client *ethclient.Client) TokensManager {
+func NewTokensManager(client *ethclient.Client, tdb TokensDB) TokensManager {
 	tokens := make(map[common.Address]*Token)
 	tokens[ETHToken.Address] = ETHToken
 
 	return &tokensManager{
 		client: client,
+		tdb:    tdb,
 		tokens: tokens,
 	}
 }
@@ -57,23 +61,42 @@ func (tm *tokensManager) GetToken(ctx context.Context, contractAddress common.Ad
 		return t, nil
 	}
 
+	t, err := tm.tdb.GetToken(contractAddress)
+	if err == nil {
+		tm.tokens[contractAddress] = t
+		return t, nil
+	}
+
 	token, err := erc20.NewERC20(contractAddress, tm.client)
 	if err != nil {
+		tm.tokens[contractAddress] = nil // remember as non-ERC20 token
 		return nil, err
 	}
 	decimals, err := token.Decimals(&bind.CallOpts{})
 	if err != nil {
+		tm.tokens[contractAddress] = nil // remember as non-ERC20 token
 		return nil, err
 	}
 	symbol, err := token.Symbol(&bind.CallOpts{})
 	if err != nil {
+		tm.tokens[contractAddress] = nil // remember as non-ERC20 token
 		return nil, err
 	}
+	if symbol == "" {
+		tm.tokens[contractAddress] = nil // remember as non-ERC20 token
+		return nil, errors.New("empty token symbol, ignoring as malformed token")
+	}
 
-	t := &Token{
+	log.Printf("Detected new token: %s at %s", symbol, contractAddress)
+
+	t = &Token{
 		Address:  contractAddress,
 		Symbol:   symbol,
 		Decimals: decimals,
+	}
+
+	if err := tm.tdb.AddToken(t); err != nil {
+		return nil, err
 	}
 
 	tm.tokens[contractAddress] = t

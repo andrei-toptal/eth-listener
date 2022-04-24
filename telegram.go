@@ -14,10 +14,6 @@ type Telegram interface {
 
 type noopTelegram struct{}
 
-func NewNoopTelegram() Telegram {
-	return noopTelegram{}
-}
-
 func (noopTelegram) Notify(string) {}
 
 type telegram struct {
@@ -27,14 +23,19 @@ type telegram struct {
 	chatID     int64
 }
 
-func NewTelegram(cfg *TelegramConfig) Telegram {
-	bot, err := tgbotapi.NewBotAPI(cfg.Token)
+func NewTelegram(config *Config) Telegram {
+	if config.Telegram == nil {
+		log.Println("Using no-op Telegram due to missing config")
+		return noopTelegram{}
+	}
+
+	bot, err := tgbotapi.NewBotAPI(config.Telegram.Token)
 	if err != nil {
 		log.Fatal(err)
 	}
 	t := &telegram{
 		bot:      bot,
-		username: cfg.Username,
+		username: config.Telegram.Username,
 	}
 	go t.updatesLoop()
 	return t
