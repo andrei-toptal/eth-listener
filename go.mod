@@ -1,4 +1,4 @@
-module github.com/pinebit/eth-listener
+module github.com/andrei-toptal/eth-listener
 
 go 1.18
 

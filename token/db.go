@@ -1,9 +1,11 @@
-package main
+package token
 
 import (
 	"bytes"
 	"encoding/gob"
 	"log"
+	"os"
+	"path"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -19,8 +21,13 @@ type tokensDB struct {
 	db *leveldb.DB
 }
 
-func NewTokensDB() TokensDB {
-	db, err := leveldb.OpenFile(TokensDBPath, nil)
+func NewTokensDB(dbPath string) TokensDB {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Panic(err)
+	}
+	tdbPath := path.Join(homeDir, dbPath)
+	db, err := leveldb.OpenFile(tdbPath, nil)
 	if err != nil {
 		log.Panicf("Failed to open TokensDB: %v", err)
 	}
@@ -56,7 +63,6 @@ func (tdb tokensDB) AddToken(token *Token) error {
 		return err
 	}
 
-	log.Printf("TokensDB: saving token: %s for %s", token.Symbol, token.Address)
 	return tdb.db.Put(token.Address.Bytes(), buf.Bytes(), nil)
 }
 
@@ -76,8 +82,6 @@ func (tdb tokensDB) GetToken(addr common.Address) (*Token, error) {
 	if err := gob.NewDecoder(buf).Decode(&dto); err != nil {
 		return nil, err
 	}
-
-	log.Printf("TokensDB: fetched token: %s for %s", dto.Symbol, addr)
 
 	return &Token{
 		Address:  addr,

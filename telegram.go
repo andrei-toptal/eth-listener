@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"sync"
 
 	"go.uber.org/atomic"
 
@@ -10,14 +11,18 @@ import (
 
 type Telegram interface {
 	Notify(message string)
+	Close()
 }
 
 type noopTelegram struct{}
 
 func (noopTelegram) Notify(string) {}
+func (noopTelegram) Close()        {}
 
 type telegram struct {
 	bot        *tgbotapi.BotAPI
+	stopCh     chan struct{}
+	waitStop   sync.WaitGroup
 	username   string
 	subscribed atomic.Bool
 	chatID     int64
@@ -35,13 +40,15 @@ func NewTelegram(config *Config) Telegram {
 	}
 	t := &telegram{
 		bot:      bot,
+		stopCh:   make(chan struct{}),
 		username: config.Telegram.Username,
 	}
+	t.waitStop.Add(1)
 	go t.updatesLoop()
 	return t
 }
 
-func (t telegram) Notify(message string) {
+func (t *telegram) Notify(message string) {
 	if !t.subscribed.Load() {
 		return
 	}
@@ -50,37 +57,44 @@ func (t telegram) Notify(message string) {
 }
 
 func (t *telegram) updatesLoop() {
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+	defer t.waitStop.Done()
 
-	updates := t.bot.GetUpdatesChan(u)
+	updates := t.bot.GetUpdatesChan(tgbotapi.NewUpdate(0))
 
-	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-		log.Printf("Received message from %s: `%s`", update.Message.From.UserName, update.Message.Text)
-		if t.username != "" && update.Message.From.UserName != t.username {
-			continue
-		}
-		if update.Message.Text == "/subscribe" {
-			t.chatID = update.Message.Chat.ID
-			t.subscribed.Store(true)
+	for {
+		select {
+		case <-t.stopCh:
+			return
+		case update := <-updates:
+			if update.Message == nil {
+				continue
+			}
+			log.Printf("Received message from %s: `%s`", update.Message.From.UserName, update.Message.Text)
+			if t.username != "" && update.Message.From.UserName != t.username {
+				continue
+			}
+			if update.Message.Text == "/subscribe" {
+				t.chatID = update.Message.Chat.ID
+				t.subscribed.Store(true)
 
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "You are subscribed!")
-			t.bot.Send(msg)
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "You are subscribed!")
+				t.bot.Send(msg)
 
-			log.Printf("Telegram Bot subscribed: %s", update.Message.From)
-		}
-		if update.Message.Text == "/unsubscribe" {
-			t.subscribed.Store(false)
+				log.Printf("Telegram Bot subscribed: %s", update.Message.From)
+			}
+			if update.Message.Text == "/unsubscribe" {
+				t.subscribed.Store(false)
 
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "You are unsubscribed.")
-			t.bot.Send(msg)
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "You are unsubscribed.")
+				t.bot.Send(msg)
 
-			log.Printf("Telegram Bot unsubscribed: %s", update.Message.From)
+				log.Printf("Telegram Bot unsubscribed: %s", update.Message.From)
+			}
 		}
 	}
+}
 
-	log.Fatal("Telegram bot has been disconnected")
+func (t *telegram) Close() {
+	close(t.stopCh)
+	t.waitStop.Wait()
 }

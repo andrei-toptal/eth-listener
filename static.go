@@ -3,9 +3,9 @@ package main
 import (
 	"strings"
 
+	"github.com/andrei-toptal/eth-listener/token/erc20"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/pinebit/eth-listener/erc20"
 )
 
 const (

@@ -1,22 +1,20 @@
-//go:build wireinject
-
 package main
 
 import (
+	"github.com/andrei-toptal/eth-listener/token"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/google/wire"
 )
 
 type App struct {
 	config        *Config
-	tokensDB      TokensDB
+	tokensDB      token.TokensDB
 	accounts      Accounts
 	telegram      Telegram
 	client        *ethclient.Client
-	tokensManager TokensManager
+	tokensManager token.TokensManager
 }
 
-func NewApp(config *Config, tokensDB TokensDB, accounts Accounts, telegram Telegram, client *ethclient.Client, tokensManager TokensManager) *App {
+func NewApp(config *Config, tokensDB token.TokensDB, accounts Accounts, telegram Telegram, client *ethclient.Client, tokensManager token.TokensManager) *App {
 	return &App{
 		config:        config,
 		tokensDB:      tokensDB,
@@ -25,13 +23,4 @@ func NewApp(config *Config, tokensDB TokensDB, accounts Accounts, telegram Teleg
 		client:        client,
 		tokensManager: tokensManager,
 	}
-}
-
-func newEthClient(config *Config) (*ethclient.Client, error) {
-	return ethclient.Dial(config.EthUrl)
-}
-
-func WireApp(configPath string) (*App, error) {
-	wire.Build(NewApp, LoadConfig, NewTokensDB, NewAccounts, NewTelegram, newEthClient, NewTokensManager)
-	return nil, nil
 }
